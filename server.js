@@ -59,7 +59,7 @@ const verifyToken = (req, res, next) => {
 app.post('/api/signup', upload.single('profileImage'), async (req, res) => {
     try {
         const { name, email, password, dob } = req.body;
-        
+
         // Check if email already exists
         const [existingUsers] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existingUsers.length > 0) {
@@ -133,6 +133,33 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
+app.post('/api/reset-password/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+
+        const [users] = await db.execute(
+            'SELECT * FROM users WHERE reset_password_token = ? AND reset_password_expires > NOW()',
+            [token]
+        );
+
+        if (users.length === 0) {
+            return res.status(400).json({ message: 'Invalid or expired reset token' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        await db.execute(
+            'UPDATE users SET password = ?, reset_password_token = NULL, reset_password_expires = NULL WHERE reset_password_token = ?',
+            [hashedPassword, token]
+        );
+
+        res.json({ message: 'Password has been reset successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Profile Route
 app.get('/api/profile', verifyToken, async (req, res) => {
     try {
@@ -150,7 +177,7 @@ app.get('/api/profile', verifyToken, async (req, res) => {
 app.post('/api/users', verifyToken, upload.single('profileImage'), async (req, res) => {
     try {
         const { name, email, dob, password } = req.body;
-        
+
         // Check if email already exists
         const [existingUsers] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existingUsers.length > 0) {
@@ -221,11 +248,10 @@ app.put('/api/users/:id', verifyToken, upload.single('profileImage'), async (req
         res.status(500).json({ message: error.message });
     }
 });
-
 app.delete('/api/users/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
-        await db.execute('UPDATE users SET is_deleted = true WHERE id = ?', [id]);
+        await db.execute('DELETE FROM users WHERE id = ?', [id]);
         res.json({ message: 'User deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -240,6 +266,7 @@ app.delete('/api/users', verifyToken, async (req, res) => {
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
+    
 });
 
 db.getConnection()
